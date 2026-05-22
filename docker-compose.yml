@@ -1,0 +1,15 @@
+services:
+  web:
+    container_name: ciexperiments
+    build:
+      context: .
+    ports:
+      - 27200:8080
+    volumes:
+      - ./:/app
+    environment:
+      TZ: 'America/New_York'
+      NLS_LANG: '.AL32UTF8'
+    env_file:
+      - .env
+    restart: unless-stopped
