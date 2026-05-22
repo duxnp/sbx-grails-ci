@@ -3,6 +3,8 @@
   "packages": {
     ".": {
       "release-type": "simple",
+      "bump-minor-pre-major": true,
+      "draft-pull-request": true,
       "extra-files": [
         "gradle.properties",
         "docker-compose.yml"
