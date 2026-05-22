@@ -1,12 +1,9 @@
 services:
   web:
+    image: kowalb038/sbx-grails-ci:0.1.0 # x-release-please-version
     container_name: ciexperiments
-    build:
-      context: .
     ports:
       - 27200:8080
-    volumes:
-      - ./:/app
     environment:
       TZ: 'America/New_York'
       NLS_LANG: '.AL32UTF8'
