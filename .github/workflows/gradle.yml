@@ -30,8 +30,8 @@ jobs:
         if: github.event_name == 'push'
         id: build
         run: ./gradlew build
-      - name: Publish Test Report
-        if: failure()
-        uses: scacap/action-surefire-report@v1
-        with:
-          report_paths: '**/build/test-results/**/TEST-*.xml'
+      # - name: Publish Test Report
+      #   if: failure()
+      #   uses: scacap/action-surefire-report@v1
+      #   with:
+      #     report_paths: '**/build/test-results/**/TEST-*.xml'
