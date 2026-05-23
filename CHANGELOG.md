@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/duxnp/sbx-grails-ci/compare/v0.2.0...v0.2.1) (2026-05-23)
+
+
+### Bug Fixes
+
+* **ci:** update Docker image reference and enhance release validation steps ([0b433b8](https://github.com/duxnp/sbx-grails-ci/commit/0b433b824a2ff0c50a0121fb0796f1fcbd776e80))
+* **ci:** update Docker image reference and enhance release validation… ([e44a44a](https://github.com/duxnp/sbx-grails-ci/commit/e44a44a40720179a2b113bb8be2653ab3e9b7e5c))
+
 ## [0.2.0](https://github.com/duxnp/sbx-grails-ci/compare/v0.1.0...v0.2.0) (2026-05-23)
 
 
