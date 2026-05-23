@@ -1,0 +1,835 @@
+plan_id: dependabot-research
+objective: Research whether GitHub Dependabot provides value for this Grails 7 project and gather all facts needed to propose a Dependabot configuration plan.
+focus_area: dependabot
+created_at: "2026-05-23"
+created_by: gem-researcher
+status: completed
+
+tldr: |
+  - Three ecosystems fully supported by Dependabot: gradle (build.gradle read directly), docker (Dockerfile images), github-actions (all 3 workflow files with 9 action references).
+  - docker-compose is also supported (docker-compose.yml) but the only image is the project's own published image — low tracking value.
+  - Critical Gradle limitation: grailsVersion and micronautPlatformVersion are defined as variables in gradle.properties; Dependabot resolves gradle.properties variables but BOM/platform() dependency updates with variable-based versions have unreliable behaviour in practice.
+  - The only hardcoded version in build.gradle is org.grails.plugins:grails-web-console:7.0.0; all other dep versions are controlled by BOM/platform() or are unversioned.
+  - The project uses the private Grails restricted Maven repository (repo.grails.org/grails/restricted); a maven-repository registry entry is required for Dependabot to resolve and update those artifacts.
+  - No npm/package.json ecosystem present; JS dependencies are managed as webjars via Gradle.
+
+research_metadata:
+  methodology: >
+    Hybrid retrieval: parallel read_file for all project manifests + list_dir for .github/;
+    fetch_webpage for official GitHub Dependabot docs (configuration-options, about-version-updates, supported-ecosystems-and-repositories);
+    cross-referenced file contents with documented ecosystem support matrix.
+  scope: >
+    All dependency manifests (build.gradle, gradle.properties, settings.gradle, docker-compose.yml, Dockerfile),
+    all .github/workflows/*.yml files, grails-app/assets/javascripts/ directory.
+    External: three GitHub Dependabot documentation pages.
+  confidence: high
+  coverage: 100
+  decision_blockers: 1
+  research_blockers: 0
+
+files_analyzed:
+  - file: build.gradle
+    path: build.gradle
+    purpose: Primary Gradle build manifest; defines all application dependencies.
+    key_elements:
+      - element: buildscript.dependencies
+        type: pattern
+        location: build.gradle:1-13
+        description: >
+          Classpath-level dependencies not published to Gradle Plugin Portal:
+          cloud.wondrify:asset-pipeline-gradle (no version — likely resolved from repo),
+          org.apache.grails:grails-bom:$grailsVersion (BOM via platform),
+          org.apache.grails:grails-data-hibernate5 (no version),
+          org.apache.grails:grails-gradle-plugins (no version).
+          All pulled from both mavenCentral() and https://repo.grails.org/grails/restricted.
+      - element: dependencies block — implementation/runtime/test
+        type: pattern
+        location: build.gradle:35-80
+        description: >
+          Direct production dependencies. Version strategy summary:
+          - platform("org.apache.grails:grails-bom:$grailsVersion"): all org.apache.grails:* deps inherit version from BOM variable.
+          - platform("io.micronaut.platform:micronaut-platform:$micronautPlatformVersion"): all io.micronaut:* deps inherit version from BOM variable.
+          - org.springframework.boot:spring-boot-* — no explicit version (controlled by Spring Boot BOM via Grails BOM).
+          - runtimeOnly "org.grails.plugins:grails-web-console:7.0.0" — HARDCODED version, only dep Dependabot can reliably update.
+          - com.h2database:h2, com.zaxxer:HikariCP, org.fusesource.jansi:jansi — no explicit versions (BOM-managed).
+          - org.webjars.npm:bootstrap, bootstrap-icons, jquery — no explicit versions (webjars, BOM-managed).
+          - org.spockframework:spock-core — no explicit version.
+      - element: repositories
+        type: pattern
+        location: build.gradle:26-32
+        description: >
+          Two repositories configured: mavenCentral() and maven { url = 'https://repo.grails.org/grails/restricted' }.
+          The restricted Grails repo is private/authenticated; Dependabot will need a maven-repository registry entry.
+    language: Groovy
+    lines: 100
+
+  - file: gradle.properties
+    path: gradle.properties
+    purpose: Defines version variables referenced in build.gradle and Gradle configuration.
+    key_elements:
+      - element: grailsVersion
+        type: variable
+        location: gradle.properties:1
+        description: "Value: 7.0.7. Controls the org.apache.grails:grails-bom BOM version and all grails-* deps."
+      - element: micronautPlatformVersion
+        type: variable
+        location: gradle.properties:2
+        description: "Value: 4.10.1. Controls the io.micronaut.platform:micronaut-platform BOM version."
+      - element: version
+        type: variable
+        location: gradle.properties:4
+        description: "Value: 0.2.1. Project version, managed by release-please."
+    language: Properties
+    lines: 8
+
+  - file: settings.gradle
+    path: settings.gradle
+    purpose: Defines root project name; no dependency configuration.
+    key_elements:
+      - element: rootProject.name
+        type: variable
+        location: settings.gradle:1
+        description: "sbx-grails-ci"
+    language: Groovy
+    lines: 1
+
+  - file: Dockerfile
+    path: Dockerfile
+    purpose: Multi-stage Docker build; defines base images for build and runtime stages.
+    key_elements:
+      - element: build stage FROM
+        type: pattern
+        location: Dockerfile:2
+        description: "FROM eclipse-temurin:17 AS build — Dependabot can track updates to this tag."
+      - element: runtime stage FROM
+        type: pattern
+        location: Dockerfile:14
+        description: "FROM eclipse-temurin:17-jre — Dependabot can track updates to this tag."
+    language: Dockerfile
+    lines: 38
+
+  - file: docker-compose.yml
+    path: docker-compose.yml
+    purpose: Defines the single application service for local/production deployment.
+    key_elements:
+      - element: web.image
+        type: pattern
+        location: docker-compose.yml:3
+        description: >
+          kowalb038/sbx-grails-ci:0.2.1 — this is the project's own published Docker image, not
+          an upstream third-party dependency. Version is managed by release-please (x-release-please-version comment).
+          Tracking via Dependabot would create conflicting PRs with release-please.
+    language: YAML
+    lines: 11
+
+  - file: .github/workflows/docker-publish.yml
+    path: .github/workflows/docker-publish.yml
+    purpose: Publishes Docker image on GitHub release events.
+    key_elements:
+      - element: actions/checkout@v4
+        type: pattern
+        location: docker-publish.yml:11
+        description: "Dependabot can update this reference."
+      - element: docker/setup-buildx-action@v3
+        type: pattern
+        location: docker-publish.yml:13
+        description: "Dependabot can update this reference."
+      - element: docker/login-action@v3
+        type: pattern
+        location: docker-publish.yml:15
+        description: "Dependabot can update this reference."
+      - element: docker/metadata-action@v5
+        type: pattern
+        location: docker-publish.yml:20
+        description: "Dependabot can update this reference."
+      - element: docker/build-push-action@v6
+        type: pattern
+        location: docker-publish.yml:27
+        description: "Dependabot can update this reference."
+    language: YAML
+    lines: 35
+
+  - file: .github/workflows/gradle.yml
+    path: .github/workflows/gradle.yml
+    purpose: CI pipeline — runs tests on PRs, runs build on push.
+    key_elements:
+      - element: actions/checkout@v4
+        type: pattern
+        location: gradle.yml:10
+        description: "Dependabot can update this reference."
+      - element: actions/setup-java@v4
+        type: pattern
+        location: gradle.yml:12
+        description: "Dependabot can update this reference."
+      - element: gradle/actions/setup-gradle@v4
+        type: pattern
+        location: gradle.yml:15
+        description: "Dependabot can update this reference."
+    language: YAML
+    lines: 40
+
+  - file: .github/workflows/release-please.yml
+    path: .github/workflows/release-please.yml
+    purpose: Automated release management via release-please action.
+    key_elements:
+      - element: actions/create-github-app-token@v3
+        type: pattern
+        location: release-please.yml:31
+        description: "Dependabot can update this reference."
+      - element: googleapis/release-please-action@v5
+        type: pattern
+        location: release-please.yml:42
+        description: "Dependabot can update this reference."
+    language: YAML
+    lines: 50
+
+patterns_found:
+  - category: structure
+    pattern: BOM-controlled versioning
+    description: >
+      All major framework versions (Grails, Micronaut, Spring Boot) are managed through
+      platform() BOM imports keyed to gradle.properties variables. No explicit versions
+      on most individual dependencies.
+    examples:
+      - file: build.gradle
+        location: build.gradle:42
+        snippet: 'implementation platform("org.apache.grails:grails-bom:$grailsVersion")'
+      - file: build.gradle
+        location: build.gradle:43
+        snippet: 'implementation platform("io.micronaut.platform:micronaut-platform:$micronautPlatformVersion")'
+    prevalence: common
+
+  - category: structure
+    pattern: Single hardcoded dependency version
+    description: >
+      Only one dependency in the entire build.gradle has a hardcoded literal version string.
+    examples:
+      - file: build.gradle
+        location: build.gradle:64
+        snippet: 'runtimeOnly "org.grails.plugins:grails-web-console:7.0.0"'
+    prevalence: rare
+
+  - category: structure
+    pattern: Private Maven repository for Grails artifacts
+    description: >
+      Both buildscript and project dependency resolution use https://repo.grails.org/grails/restricted
+      in addition to mavenCentral(). This is a semi-private authenticated repository.
+    examples:
+      - file: build.gradle
+        location: build.gradle:5-7
+        snippet: |
+          maven {
+             url = 'https://repo.grails.org/grails/restricted'
+          }
+    prevalence: common
+
+  - category: structure
+    pattern: GitHub Actions version pinning using major tags
+    description: >
+      All 9 action references in the 3 workflow files use major-version tags (e.g. @v4, @v3, @v5, @v6).
+      Dependabot can update these to newer major tags when released.
+    examples:
+      - file: .github/workflows/gradle.yml
+        location: gradle.yml:15
+        snippet: "uses: gradle/actions/setup-gradle@v4"
+      - file: .github/workflows/release-please.yml
+        location: release-please.yml:42
+        snippet: "uses: googleapis/release-please-action@v5"
+    prevalence: common
+
+  - category: structure
+    pattern: Gradle Wrapper present
+    description: >
+      gradle/wrapper/gradle-wrapper.properties is present. Dependabot can update the Gradle Wrapper
+      version automatically (runs Gradle to update gradlew, gradlew.bat, gradle-wrapper.jar, and
+      gradle-wrapper.properties).
+    examples:
+      - file: gradle/wrapper/gradle-wrapper.properties
+        location: gradle/wrapper/gradle-wrapper.properties
+        snippet: "distributionUrl=https\\://services.gradle.org/distributions/gradle-*.zip"
+    prevalence: rare
+
+  - category: structure
+    pattern: release-please version management
+    description: >
+      Project version (0.2.1) and docker-compose.yml image tag are managed by release-please.
+      The docker-compose image kowalb038/sbx-grails-ci is not a trackable upstream dependency.
+    examples:
+      - file: gradle.properties
+        location: gradle.properties:3-5
+        snippet: |
+          # x-release-please-start-version
+          version=0.2.1
+          # x-release-please-end-version
+      - file: docker-compose.yml
+        location: docker-compose.yml:3
+        snippet: "image: kowalb038/sbx-grails-ci:0.2.1 # x-release-please-version"
+    prevalence: occasional
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: Gradle build system
+      responsibility: Dependency resolution, compilation, test execution, WAR packaging
+      location: build.gradle, gradle.properties, settings.gradle, gradle/wrapper/
+      relationship_to_domain: Primary dependency manifest; Dependabot reads build.gradle and gradle.properties
+    - component: Docker multi-stage build
+      responsibility: Produces runnable Docker image from source via eclipse-temurin:17 base images
+      location: Dockerfile
+      relationship_to_domain: Dependabot tracks eclipse-temurin base image tags
+    - component: GitHub Actions CI/CD
+      responsibility: Build verification (gradle.yml), Docker publishing (docker-publish.yml), release management (release-please.yml)
+      location: .github/workflows/
+      relationship_to_domain: Dependabot github-actions ecosystem tracks all `uses:` action references
+    - component: release-please
+      responsibility: Automates changelog and version bump PRs for releases
+      location: release-please-config.json, .github/workflows/release-please.yml
+      relationship_to_domain: >
+        Manages project version and docker-compose image tag; these MUST be excluded from
+        Dependabot docker-compose tracking to avoid conflicts.
+  interfaces_used_by_domain:
+    - interface: Grails restricted Maven repository
+      location: https://repo.grails.org/grails/restricted
+      usage_pattern: >
+        Used in both buildscript.repositories and project repositories blocks to resolve
+        Grails-specific artifacts (grails-bom, grails-gradle-plugins, grails-data-hibernate5,
+        asset-pipeline-gradle, asset-pipeline-grails). Requires a maven-repository registry
+        entry in dependabot.yml for Dependabot to resolve these dependencies.
+    - interface: Maven Central
+      location: https://repo1.maven.org/maven2/
+      usage_pattern: Used for all standard Maven artifacts (Spring Boot, Micronaut, H2, HikariCP, Spock, etc.)
+  data_flow_involving_domain: >
+    Dependabot reads build.gradle → resolves property variables from gradle.properties →
+    queries Maven Central and repo.grails.org for newer versions → opens PRs to update
+    build.gradle (for literal versions) or gradle.properties (for version variables).
+    For github-actions: reads .github/workflows/*.yml → queries GitHub API for action releases.
+    For docker: reads Dockerfile FROM lines → queries Docker Hub for eclipse-temurin tags.
+  key_relationships_to_domain:
+    - from: build.gradle
+      to: gradle.properties
+      relationship: imports (variable substitution for $grailsVersion, $micronautPlatformVersion)
+    - from: Dockerfile
+      to: eclipse-temurin Docker Hub repository
+      relationship: imports (FROM base image)
+    - from: .github/workflows/*.yml
+      to: GitHub marketplace actions
+      relationship: imports (uses: references)
+
+related_technology_stack:
+  languages_used_in_domain:
+    - Groovy (build.gradle, settings.gradle)
+    - Properties (gradle.properties)
+    - YAML (docker-compose.yml, .github/workflows/*.yml)
+    - Dockerfile syntax
+  frameworks_used_in_domain:
+    - name: Apache Grails 7
+      usage_in_domain: >
+        Primary application framework. Version 7.0.7 controlled via grailsVersion in gradle.properties.
+        BOM: org.apache.grails:grails-bom:7.0.7.
+        Artifacts published to https://repo.grails.org/grails/restricted (not Maven Central).
+    - name: Micronaut Platform
+      usage_in_domain: >
+        HTTP client and serde library. Version 4.10.1 controlled via micronautPlatformVersion.
+        BOM: io.micronaut.platform:micronaut-platform:4.10.1.
+    - name: Spring Boot
+      usage_in_domain: >
+        Embedded server, actuator, validation, logging. Version controlled transitively by
+        Grails BOM; no explicit version declared.
+    - name: Gradle Wrapper
+      usage_in_domain: >
+        Build tooling. Dependabot can update gradle/wrapper/gradle-wrapper.properties automatically.
+  libraries_used_in_domain:
+    - name: org.grails.plugins:grails-web-console
+      purpose_in_domain: Runtime Grails console plugin. Version 7.0.0 is HARDCODED — primary Dependabot update candidate.
+    - name: com.h2database:h2
+      purpose_in_domain: Runtime in-memory database. Version BOM-managed (no explicit version).
+    - name: com.zaxxer:HikariCP
+      purpose_in_domain: Connection pool. Version BOM-managed (no explicit version).
+    - name: org.spockframework:spock-core
+      purpose_in_domain: Test framework. Version BOM-managed (no explicit version).
+    - name: org.webjars.npm:bootstrap / bootstrap-icons / jquery
+      purpose_in_domain: Frontend CSS/JS delivered as webjars. No explicit versions (BOM-managed).
+    - name: eclipse-temurin:17 / eclipse-temurin:17-jre
+      purpose_in_domain: JDK/JRE Docker base images. Dependabot docker ecosystem tracks these.
+    - name: cloud.wondrify:asset-pipeline-gradle / asset-pipeline-grails
+      purpose_in_domain: Asset pipeline for CSS/JS compilation. No explicit version.
+
+related_conventions:
+  naming_patterns_in_domain: >
+    Dependency coordinates use standard Maven groupId:artifactId format.
+    For Gradle/Maven ignore rules: dependency-name uses groupId:artifactId format (e.g., org.apache.grails:grails-bom).
+  structure_of_domain: >
+    Groovy DSL build.gradle at repository root.
+    No gradle/libs.versions.toml version catalog (would provide better Dependabot support).
+    No gradle.lockfile (project uses dynamic dependency resolution via BOMs).
+  error_handling_in_domain: Not applicable.
+  testing_in_domain: Not applicable.
+  documentation_in_domain: >
+    release-please manages CHANGELOG.md and version bumps.
+    docker-compose.yml image tag uses # x-release-please-version marker.
+
+related_dependencies:
+  internal:
+    - component: gradle.properties
+      relationship_to_domain: Defines grailsVersion and micronautPlatformVersion used in build.gradle
+      direction: inbound
+    - component: release-please-config.json
+      relationship_to_domain: Manages project version independently; docker-compose image must be excluded from Dependabot
+      direction: inbound
+  external:
+    - name: Maven Central (mavenCentral())
+      purpose_for_domain: Resolves standard JVM artifacts (Spring Boot, Micronaut, H2, etc.)
+    - name: Grails Restricted Maven Repository (repo.grails.org/grails/restricted)
+      purpose_for_domain: Resolves Grails-specific artifacts not published to Maven Central
+    - name: Docker Hub
+      purpose_for_domain: Hosts eclipse-temurin base images referenced in Dockerfile
+    - name: GitHub Marketplace / GitHub.com
+      purpose_for_domain: Hosts GitHub Actions referenced in workflow files
+
+domain_security_considerations:
+  sensitive_areas:
+    - area: Grails restricted Maven repository credentials
+      location: build.gradle (repositories block)
+      concern: >
+        If Dependabot is configured with maven-repository registry credentials in dependabot.yml,
+        those credentials must be stored as GitHub repository secrets (not plaintext).
+        Pattern: ${{ secrets.GRAILS_REPO_USERNAME }} / ${{ secrets.GRAILS_REPO_PASSWORD }}.
+    - area: Spring Boot version
+      location: build.gradle (inherited via Grails BOM)
+      concern: >
+        Spring Boot version is controlled by the Grails BOM. CVEs in Spring Boot components
+        will only be addressed when Dependabot updates grailsVersion. Security updates for
+        Gradle require the Dependency Submission API for transitive dep CVE detection.
+    - area: eclipse-temurin Docker base image
+      location: Dockerfile:2, Dockerfile:14
+      concern: >
+        eclipse-temurin:17 is a dated tag. Tag "17" is currently latest for Java 17 LTS patch
+        releases. Dependabot will track patch updates (17.0.x) as new Docker Hub tags are published.
+  authentication_patterns_in_domain: >
+    Grails restricted repo uses username/password authentication.
+    Dependabot registry configuration needs maven-repository type entry pointing to
+    https://repo.grails.org/grails/restricted.
+  authorization_patterns_in_domain: Not applicable for dependency tracking.
+  data_validation_in_domain: Not applicable.
+
+testing_patterns:
+  framework: Not applicable (no test dependencies are version-pinned explicitly).
+  coverage_areas: []
+  test_organization: Not applicable.
+  mock_patterns: []
+
+# ==============================================================================
+# DEPENDABOT SUPPORT MATRIX (Research Output)
+# ==============================================================================
+
+dependabot_support_matrix:
+  - ecosystem: Gradle
+    package_ecosystem_value: gradle
+    found_in: build.gradle, gradle.properties
+    support_level: partial
+    notes: >
+      Supported for version updates. Reads build.gradle (Groovy DSL) directly.
+      Reads gradle.properties for variable substitution.
+      LIMITATION 1: BOM/platform() versions with variable substitution (grailsVersion,
+      micronautPlatformVersion) have uncertain reliability — Dependabot may not consistently
+      update these when defined as gradle.properties variables referenced through platform().
+      LIMITATION 2: Security updates require manual dependency graph upload via Dependency
+      Submission API (no automatic Gradle execution for security scanning).
+      LIMITATION 3: Grails-specific classpath plugins in buildscript block from private repo
+      need registry config.
+      Gradle Wrapper: Supported — Dependabot will also update gradle-wrapper.properties.
+    updatable_dependencies:
+      - "org.grails.plugins:grails-web-console:7.0.0 (hardcoded — definite Dependabot candidate)"
+      - "gradle/wrapper/gradle-wrapper.properties (Gradle Wrapper version)"
+      - "org.apache.grails:grails-bom:$grailsVersion (IF property variable resolution works)"
+      - "io.micronaut.platform:micronaut-platform:$micronautPlatformVersion (IF property variable resolution works)"
+
+  - ecosystem: Docker
+    package_ecosystem_value: docker
+    found_in: Dockerfile
+    support_level: yes
+    notes: >
+      Fully supported. Dependabot reads Dockerfile FROM directives and tracks Docker Hub image tags.
+      eclipse-temurin:17 and eclipse-temurin:17-jre will both be tracked.
+      Tag format "17" means Dependabot will suggest minor/patch updates (e.g., 17.0.15 etc.)
+      when eclipse-temurin publishes new tags.
+    updatable_dependencies:
+      - "eclipse-temurin:17 (build stage)"
+      - "eclipse-temurin:17-jre (runtime stage)"
+
+  - ecosystem: Docker Compose
+    package_ecosystem_value: docker-compose
+    found_in: docker-compose.yml
+    support_level: yes-but-not-recommended
+    notes: >
+      Technically supported. However, the only image in docker-compose.yml is
+      kowalb038/sbx-grails-ci:0.2.1 which is the project's own published image,
+      not an upstream third-party dependency. Its version is managed by release-please.
+      Enabling docker-compose Dependabot would create conflicting PRs with release-please.
+      Recommendation: exclude or omit docker-compose ecosystem from dependabot.yml.
+    updatable_dependencies: []
+
+  - ecosystem: GitHub Actions
+    package_ecosystem_value: github-actions
+    found_in: .github/workflows/docker-publish.yml, .github/workflows/gradle.yml, .github/workflows/release-please.yml
+    support_level: yes
+    notes: >
+      Fully supported. Dependabot scans all .github/workflows/*.yml files automatically
+      when directory is set to "/". Tracks all 9 action references using GitHub repository
+      syntax (actions/*, docker/*, gradle/*, googleapis/*).
+    updatable_dependencies:
+      - "actions/checkout@v4 (appears in docker-publish.yml and gradle.yml)"
+      - "docker/setup-buildx-action@v3"
+      - "docker/login-action@v3"
+      - "docker/metadata-action@v5"
+      - "docker/build-push-action@v6"
+      - "actions/setup-java@v4"
+      - "gradle/actions/setup-gradle@v4"
+      - "actions/create-github-app-token@v3"
+      - "googleapis/release-please-action@v5"
+
+  - ecosystem: npm
+    package_ecosystem_value: npm
+    found_in: "NOT FOUND"
+    support_level: not-applicable
+    notes: >
+      No package.json or node_modules found. JavaScript dependencies (Bootstrap, Bootstrap-icons,
+      jQuery) are managed as webjars (org.webjars.npm:*) through Gradle, not npm.
+      No npm ecosystem entry needed.
+    updatable_dependencies: []
+
+# ==============================================================================
+# KEY DEPENDENCIES AT RISK (notable upstream versions to watch)
+# ==============================================================================
+
+key_dependencies_at_risk:
+  - dependency: "org.apache.grails:grails-bom"
+    current_version: "7.0.7 (via grailsVersion in gradle.properties)"
+    risk: medium
+    notes: >
+      Active development framework. Dependabot may or may not update this via property
+      variable resolution. Latest Grails 7.x releases should be tracked for security patches.
+  - dependency: "io.micronaut.platform:micronaut-platform"
+    current_version: "4.10.1 (via micronautPlatformVersion in gradle.properties)"
+    risk: medium
+    notes: >
+      Micronaut 4.x is actively maintained. HTTP client security patches released frequently.
+  - dependency: "org.springframework.boot:spring-boot-starter-*"
+    current_version: "BOM-managed (Spring Boot 3.x via Grails 7 BOM)"
+    risk: high
+    notes: >
+      Spring Boot receives frequent security CVEs. Version controlled by Grails BOM;
+      only updatable indirectly via grailsVersion bump.
+  - dependency: "org.grails.plugins:grails-web-console"
+    current_version: "7.0.0 (hardcoded)"
+    risk: low
+    notes: >
+      Only hardcoded version in build.gradle. Dependabot will definitely create PRs for this.
+  - dependency: "eclipse-temurin:17 / eclipse-temurin:17-jre"
+    current_version: "17 (tag)"
+    risk: medium
+    notes: >
+      JDK base image. eclipse-temurin publishes patch tags (17.0.x_y-jdk) regularly for
+      security backports. Dependabot docker ecosystem will track these.
+  - dependency: "gradle/actions/setup-gradle"
+    current_version: "@v4"
+    risk: low
+    notes: >
+      Gradle build action for CI. Updates contain build performance improvements. Low security risk.
+  - dependency: "googleapis/release-please-action"
+    current_version: "@v5"
+    risk: low
+    notes: >
+      Release automation action. Dependabot will track v5 → v6+ when released.
+
+# ==============================================================================
+# LIMITATIONS / GAPS
+# ==============================================================================
+
+limitations_and_gaps:
+  - title: gradle.properties BOM variable resolution reliability
+    description: >
+      The two most important version pins (grailsVersion=7.0.7 and micronautPlatformVersion=4.10.1)
+      are used as variables in platform() BOM imports in build.gradle. Dependabot for Gradle
+      reads gradle.properties and attempts variable substitution, but the documented supported
+      file list does not explicitly include gradle.properties — only build.gradle,
+      gradle/libs.versions.toml, gradle.lockfile, and applied files with "dependencies" in the name.
+      In practice, community reports indicate variable resolution works for simple cases but
+      BOM platform() with variable versions is inconsistently handled.
+    impact: high
+    recommendation: >
+      Migrate to gradle/libs.versions.toml version catalog for grailsVersion and micronautPlatformVersion.
+      This is the officially documented format with reliable Dependabot support.
+      Alternatively, write version literals directly in build.gradle.
+
+  - title: No gradle/libs.versions.toml version catalog
+    description: >
+      The project does not use a Gradle version catalog (gradle/libs.versions.toml).
+      This is the recommended modern pattern for Gradle dependency version management and
+      has explicit, documented Dependabot support. The current approach of gradle.properties
+      variables has weaker support.
+    impact: medium
+    recommendation: >
+      Consider adopting gradle/libs.versions.toml for explicit Dependabot compatibility.
+
+  - title: Grails restricted Maven repository access
+    description: >
+      repo.grails.org/grails/restricted requires authentication. Dependabot cannot resolve
+      Grails-specific artifacts without a maven-repository registry entry in dependabot.yml.
+      Without this, Dependabot may fail to parse/validate Gradle updates involving Grails artifacts.
+    impact: high
+    recommendation: >
+      Add a registries entry in dependabot.yml with type: maven-repository pointing to
+      https://repo.grails.org/grails/restricted and reference it in the gradle ecosystem entry.
+      Credentials should be stored as GitHub repository secrets.
+
+  - title: Gradle security updates require Dependency Submission API
+    description: >
+      Dependabot security updates for Gradle are limited — they cannot automatically run Gradle
+      to resolve the full transitive dependency graph. To get CVE alerts on transitive deps
+      (e.g., a vulnerable version of logback-core pulled in by Spring Boot), the Dependency
+      Submission API must be used to upload the dependency graph as part of the CI pipeline.
+    impact: medium
+    recommendation: >
+      Add gradle/actions/dependency-submission@v4 step to .github/workflows/gradle.yml to
+      upload the full dependency graph on each push to main. This enables Dependabot security
+      alerts and automated security update PRs for transitive dependencies.
+
+  - title: docker-compose.yml tracks project's own image
+    description: >
+      The only image in docker-compose.yml is the project's own kowalb038/sbx-grails-ci image,
+      whose version is managed by release-please. Enabling docker-compose Dependabot would
+      conflict with release-please version management.
+    impact: low
+    recommendation: Either omit docker-compose from dependabot.yml or exclude the image via ignore rules.
+
+  - title: Grails Plugin Portal artifacts may lack pom.xml metadata
+    description: >
+      Some Grails-specific plugins (e.g., cloud.wondrify:asset-pipeline-gradle) published to the
+      Grails restricted repo may have incomplete pom.xml metadata. Dependabot uses pom.xml data
+      to add release notes/changelog links to PRs. If pom.xml is absent or incomplete,
+      PRs will lack this metadata (not a blocking issue).
+    impact: low
+    recommendation: No action required; cosmetic limitation only.
+
+# ==============================================================================
+# RECOMMENDED dependabot.yml ECOSYSTEM ENTRIES
+# ==============================================================================
+
+recommended_ecosystem_entries:
+  - package_ecosystem: gradle
+    directory: "/"
+    schedule: weekly
+    notes: >
+      Covers build.gradle (direct deps), gradle.properties (version variables, partial reliability),
+      and gradle/wrapper/ (Gradle Wrapper). Requires Grails restricted maven-repository registry config.
+    requires_registry: true
+    registry_type: maven-repository
+    registry_url: https://repo.grails.org/grails/restricted
+
+  - package_ecosystem: docker
+    directory: "/"
+    schedule: weekly
+    notes: >
+      Tracks eclipse-temurin:17 and eclipse-temurin:17-jre base image tags in Dockerfile.
+    requires_registry: false
+
+  - package_ecosystem: github-actions
+    directory: "/"
+    schedule: weekly
+    notes: >
+      Tracks all 9 action references across 3 workflow files. Dependabot scans
+      .github/workflows/ automatically when directory is "/".
+    requires_registry: false
+
+  - package_ecosystem: docker-compose
+    directory: "/"
+    schedule: N/A
+    notes: >
+      NOT RECOMMENDED. The only image is the project's own release-please-managed image.
+      Either omit entirely or add ignore rule for kowalb038/sbx-grails-ci.
+    requires_registry: false
+
+# ==============================================================================
+# RAW FILE CONTENTS (for orchestrator use in plan creation)
+# ==============================================================================
+
+raw_file_contents:
+  build_gradle: |
+    buildscript {
+        repositories {
+            mavenCentral()
+            maven {
+               url = 'https://repo.grails.org/grails/restricted'
+            }
+        }
+        dependencies { // Not Published to Gradle Plugin Portal
+            classpath "cloud.wondrify:asset-pipeline-gradle"
+            classpath platform("org.apache.grails:grails-bom:$grailsVersion")
+            classpath "org.apache.grails:grails-data-hibernate5"
+            classpath "org.apache.grails:grails-gradle-plugins"
+        }
+    }
+
+    plugins {
+        id "war"
+        id "idea"
+        id "eclipse"
+    }
+
+    // Not Published to Gradle Plugin Portal
+    apply plugin: "org.apache.grails.gradle.grails-web"
+    apply plugin: "org.apache.grails.gradle.grails-gsp"
+    apply plugin: "cloud.wondrify.asset-pipeline"
+    apply plugin: "org.apache.grails.gradle.grails-gson"
+
+    group = "sbx.grails.ci"
+
+    repositories {
+        mavenCentral()
+        maven {
+           url = 'https://repo.grails.org/grails/restricted'
+        }
+    }
+
+    dependencies {
+        profile "org.apache.grails.profiles:web"
+        developmentOnly "org.springframework.boot:spring-boot-devtools"
+        testAndDevelopmentOnly "org.webjars.npm:bootstrap"
+        testAndDevelopmentOnly "org.webjars.npm:bootstrap-icons"
+        testAndDevelopmentOnly "org.webjars.npm:jquery"
+        implementation "io.micronaut:micronaut-http-client-jdk"
+        implementation platform("io.micronaut.platform:micronaut-platform:$micronautPlatformVersion")
+        implementation "io.micronaut.serde:micronaut-serde-jackson"
+        implementation platform("org.apache.grails:grails-bom:$grailsVersion")
+        implementation "org.apache.grails:grails-cache"
+        implementation "org.apache.grails:grails-core"
+        implementation "org.apache.grails:grails-data-hibernate5"
+        implementation "org.apache.grails:grails-data-mongodb-gson-templates"
+        implementation "org.apache.grails:grails-databinding"
+        implementation "org.apache.grails:grails-events"
+        implementation "org.apache.grails:grails-gsp"
+        implementation "org.apache.grails:grails-interceptors"
+        implementation "org.apache.grails:grails-layout"
+        implementation "org.apache.grails:grails-logging"
+        implementation "org.apache.grails:grails-rest-transforms"
+        implementation "org.apache.grails:grails-scaffolding"
+        implementation "org.apache.grails:grails-services"
+        implementation "org.apache.grails:grails-url-mappings"
+        implementation "org.apache.grails:grails-views-gson"
+        implementation "org.apache.grails:grails-web-boot"
+        implementation "org.springframework.boot:spring-boot-autoconfigure"
+        implementation "org.springframework.boot:spring-boot-starter"
+        implementation "org.springframework.boot:spring-boot-starter-actuator"
+        implementation "org.springframework.boot:spring-boot-starter-logging"
+        implementation "org.springframework.boot:spring-boot-starter-tomcat"
+        implementation "org.springframework.boot:spring-boot-starter-validation"
+        console "org.apache.grails:grails-console"
+        runtimeOnly "cloud.wondrify:asset-pipeline-grails"
+        runtimeOnly "com.h2database:h2"
+        runtimeOnly "com.zaxxer:HikariCP"
+        runtimeOnly "org.fusesource.jansi:jansi"
+        runtimeOnly "org.grails.plugins:grails-web-console:7.0.0"
+        integrationTestImplementation testFixtures("org.apache.grails:grails-geb")
+        testImplementation "org.apache.grails:grails-testing-support-datamapping"
+        testImplementation "org.apache.grails:grails-testing-support-views-gson"
+        testImplementation "org.apache.grails:grails-testing-support-web"
+        testImplementation "org.spockframework:spock-core"
+    }
+
+    compileJava.options.release = 17
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+    }
+
+    assets {
+        excludes = [
+                'webjars/jquery/**',
+                'webjars/bootstrap/**',
+                'webjars/bootstrap-icons/**'
+        ]
+        includes = [
+                'webjars/jquery/*/dist/jquery.js',
+                'webjars/bootstrap/*/dist/js/bootstrap.bundle.js',
+                'webjars/bootstrap/*/dist/css/bootstrap.css',
+                'webjars/bootstrap-icons/*/font/bootstrap-icons.css',
+                'webjars/bootstrap-icons/*/font/fonts/*',
+        ]
+    }
+
+    tasks.withType(GroovyCompile).configureEach {
+        groovyOptions.optimizationOptions.indy = false
+    }
+
+    bootWar {
+        archiveVersion = ""
+        archiveFileName = "ROOT.war"
+    }
+
+  gradle_properties: |
+    grailsVersion=7.0.7
+    micronautPlatformVersion=4.10.1
+    # x-release-please-start-version
+    version=0.2.1
+    # x-release-please-end-version
+    org.gradle.caching=true
+    org.gradle.daemon=true
+    org.gradle.parallel=true
+    org.gradle.jvmargs=-Dfile.encoding=UTF-8 -Xmx1024M
+
+open_questions:
+  - question: >
+      Does Dependabot reliably update grailsVersion and micronautPlatformVersion in
+      gradle.properties when they are used as platform() BOM variables in build.gradle?
+    context: >
+      The docs list build.gradle and gradle/libs.versions.toml as supported files, but NOT
+      gradle.properties explicitly. Community reports suggest partial support exists. This
+      needs empirical verification before counting on Dependabot to manage these critical
+      framework versions.
+    type: decision_blocker
+    affects: ["gradle-ecosystem-config"]
+
+  - question: >
+      Does the Grails restricted Maven repo (repo.grails.org/grails/restricted) require
+      authentication for read access, or is it publicly readable?
+    context: >
+      The URL contains "restricted" which suggests authentication may be required. If public
+      read is allowed, the registry configuration in dependabot.yml may not be mandatory
+      (though still recommended for reliability).
+    type: decision_blocker
+    affects: ["gradle-ecosystem-config", "registry-config"]
+
+  - question: >
+      Should googleapis/release-please-action Dependabot updates be enabled, given that
+      release-please manages the release workflow?
+    context: >
+      If release-please-action is updated to a breaking major version, the release workflow
+      would break. However, patch/minor updates are generally safe. Consider whether to
+      restrict release-please-action updates to patch/minor only.
+    type: decision_blocker
+    affects: ["github-actions-ecosystem-config"]
+
+gaps:
+  - area: gradle.properties variable resolution for platform() BOMs
+    description: >
+      Insufficient empirical data on whether Dependabot creates PRs to update
+      grailsVersion and micronautPlatformVersion in gradle.properties. Official docs
+      do not explicitly confirm this pattern is supported.
+    impact: decision_blocker
+    affects: ["gradle-ecosystem-config"]
+
+  - area: Grails restricted repository authentication requirement
+    description: >
+      Unknown whether repo.grails.org/grails/restricted requires authentication for
+      dependency resolution. If it does, dependabot.yml must include a maven-repository
+      registry entry; if not, no registry config is needed.
+    impact: decision_blocker
+    affects: ["registry-config"]
+
+  - area: Dependency Submission API integration
+    description: >
+      No dependency-submission workflow step currently exists. Without it, Dependabot
+      security updates for Gradle will only cover directly declared dependencies
+      (not transitive), missing the majority of the resolved dependency tree.
+    impact: research_blocker
+    affects: ["security-updates-config"]

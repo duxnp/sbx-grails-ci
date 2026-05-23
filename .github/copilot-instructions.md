@@ -156,8 +156,22 @@ The architecture follows these principles:
 
 ## Commit Messages
 
-- Use [Conventional Commits](https://www.conventionalcommits.org/) format: `<type> (<scope>): <description>`
+- Use [Conventional Commits](https://www.conventionalcommits.org/) format: `<type>(<scope>): <description>`
 - Valid types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`, `perf`
+
+### Commit Types
+
+| Type       | When to Use                                                                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `feat`     | Introducing a new feature or capability visible to users or consumers of the API (e.g., new controller action, new domain class, new UI component)      |
+| `fix`      | Correcting a bug or unintended behavior in existing code (e.g., fixing a validation rule, correcting a broken query, resolving a UI defect)             |
+| `refactor` | Restructuring existing code without changing its external behavior (e.g., extracting a method, renaming a variable for clarity, reorganizing a service) |
+| `test`     | Adding or updating tests with no production code changes (e.g., new Spock specs, updating Geb page objects, adding integration test coverage)           |
+| `docs`     | Changes to documentation only (e.g., updating README, adding inline comments, revising copilot instructions)                                            |
+| `chore`    | Routine maintenance tasks that don't affect production code or tests (e.g., updating dependencies, modifying `.gitignore`, adjusting project config)    |
+| `ci`       | Changes to CI/CD pipeline configuration (e.g., modifying GitHub Actions workflows, updating Dockerfile, adjusting build scripts)                        |
+| `perf`     | Changes that improve performance without altering behavior (e.g., adding eager fetching to a GORM mapping, optimizing a query, caching a result)        |
+
 - Use scope to indicate the area of the codebase (e.g., `models`, `interfaces`, `services`, `deps`, `tests`)
 - Write the subject line in imperative mood, lowercase, and keep it under 72 characters
 - Do not end the subject line with a period
