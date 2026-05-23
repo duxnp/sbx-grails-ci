@@ -71,7 +71,7 @@ dependencies {
     runtimeOnly "com.h2database:h2"
     runtimeOnly "com.zaxxer:HikariCP"
     runtimeOnly "org.fusesource.jansi:jansi"
-    runtimeOnly "org.grails.plugins:grails-web-console:7.0.0"
+    runtimeOnly "org.grails.plugins:grails-web-console:7.1.0"
     integrationTestImplementation testFixtures("org.apache.grails:grails-geb")
     testImplementation "org.apache.grails:grails-testing-support-datamapping"
     testImplementation "org.apache.grails:grails-testing-support-views-gson"
