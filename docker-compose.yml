@@ -1,6 +1,6 @@
 services:
   web:
-    image: kowalb038/sbx-grails-ci:0.1.0 # x-release-please-version
+    image: kowalb038/sbx-grails-ci:0.2.0 # x-release-please-version
     container_name: ciexperiments
     ports:
       - 27200:8080
