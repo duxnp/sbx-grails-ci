@@ -20,7 +20,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: badboybry9000/sbx-grails-ci
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/sbx-grails-ci
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
