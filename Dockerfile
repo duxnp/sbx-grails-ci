@@ -1,5 +1,5 @@
 # Build stage: compile source and produce ROOT.war
-FROM eclipse-temurin:17 AS build
+FROM eclipse-temurin:25 AS build
 LABEL maintainer="Me"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -12,7 +12,7 @@ RUN dos2unix ./gradlew && chmod +x ./gradlew
 RUN ./gradlew bootWar -Dgrails.env=prod --no-daemon
 
 # Runtime stage: lean image containing only the pre-built WAR
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:25-jre
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     dos2unix \
