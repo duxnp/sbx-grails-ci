@@ -14,7 +14,7 @@ jobs:
           distribution: 'liberica'
           java-version: 17
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         # Uncomment the build-scan parameters if you want to publish a Gradle build scan
         # in order to see all the build logs, a complete task timeline, test outputs,
         # and the resolved dependencies of your build.
@@ -32,7 +32,7 @@ jobs:
         run: ./gradlew build
       - name: Submit Dependency Graph
         if: github.event_name == 'push'
-        uses: gradle/actions/dependency-submission@v4
+        uses: gradle/actions/dependency-submission@v6
       # - name: Publish Test Report
       #   if: failure()
       #   uses: scacap/action-surefire-report@v1
