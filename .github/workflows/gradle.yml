@@ -5,7 +5,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       checks: write
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK 17
@@ -30,6 +30,9 @@ jobs:
         if: github.event_name == 'push'
         id: build
         run: ./gradlew build
+      - name: Submit Dependency Graph
+        if: github.event_name == 'push'
+        uses: gradle/actions/dependency-submission@v4
       # - name: Publish Test Report
       #   if: failure()
       #   uses: scacap/action-surefire-report@v1
