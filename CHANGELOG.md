@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/duxnp/sbx-grails-ci/compare/v0.2.1...v0.3.0) (2026-06-03)
+
+
+### Features
+
+* **config:** add staging environment configuration for dataSource ([f44b076](https://github.com/duxnp/sbx-grails-ci/commit/f44b0764924eb7a524f671c5bbd18248777a5558))
+* **devcontainer:** add Dockerfile and configuration for Grails 7 development environment ([3517509](https://github.com/duxnp/sbx-grails-ci/commit/3517509806debeaa08fcbcb3e48d768c8ae5dc95))
+* **research:** add comprehensive findings on Docker image management for staging and production ([7a852c3](https://github.com/duxnp/sbx-grails-ci/commit/7a852c39c29d3fcb8a51d0071bba18d38fc5489e))
+
+
+### Bug Fixes
+
+* **docker:** update image name in docker-compose.yml ([5559dce](https://github.com/duxnp/sbx-grails-ci/commit/5559dceb7ee7ab46d75e1e6ee4603fccb549234f))
+
 ## [0.2.1](https://github.com/duxnp/sbx-grails-ci/compare/v0.2.0...v0.2.1) (2026-05-23)
 
 
