@@ -1,0 +1,424 @@
+plan_id: docker-staging-2026-05-23
+objective: >
+  Research best practices for managing Docker images for staging vs production
+  environments when using GitHub Actions and Docker Hub, with specific focus on
+  a small-team Grails 7 / Spring Boot application.
+focus_area: docker_staging
+created_at: "2026-05-23"
+created_by: gem-researcher
+status: completed
+
+tldr: |
+  - Recommended approach for a small team: keep one registry (Docker Hub OR GHCR), use separate
+    tags (e.g., `edge` for staging, semver for production) rather than separate registries.
+  - GHCR is strictly better than Docker Hub for inner-loop/staging images on GitHub-hosted projects:
+    no pull rate limits for public images, no secrets needed in Actions (uses GITHUB_TOKEN), and
+    currently free for container storage/bandwidth with 1-month advance notice of any change.
+  - Docker Hub free ("Personal") tier is pull-rate-limited (200 pulls/6 h for authenticated, 100 for
+    unauthenticated); this actively hurts CI/CD loops and staging server restarts.
+  - Tag convention best practice: `edge` or `main` for the latest commit on main, `sha-<short>` for
+    traceability, semver (`1.2.3`, `1.2`) for production releases.
+  - Grails 7 WAR contains ALL environment configs; the active environment is resolved at startup via
+    `-Dgrails.env=X`. Build one image and override the environment at runtime — no separate staging
+    image needed.
+
+research_metadata:
+  methodology: >
+    hybrid retrieval (semantic_search + grep_search), direct file reads of Dockerfile /
+    docker-compose.yml / GitHub Actions workflows / application.yml, official docs fetched from
+    docs.github.com and docs.docker.com for billing, rate limits, and GHCR authentication.
+  scope: >
+    Docker image lifecycle, GitHub Actions CI/CD, registry comparison, Grails environment
+    resolution, tag naming conventions — all scoped to a single-service small-team project.
+  confidence: high
+  coverage: 95
+  decision_blockers: 0
+  research_blockers: 0
+
+files_analyzed:
+  - file: Dockerfile
+    path: Dockerfile
+    purpose: Multi-stage build; compiles Grails WAR with grails.env=prod baked in at build time.
+    key_elements:
+      - element: RUN ./gradlew bootWar -Dgrails.env=prod --no-daemon
+        type: pattern
+        location: Dockerfile:13
+        description: >
+          Build-time environment selection. Produces ROOT.war containing all environment blocks
+          from application.yml; only default/prod settings are activated at this build phase.
+          The WAR still honors -Dgrails.env=X at runtime.
+      - element: ENTRYPOINT ["/tmp/docker-entrypoint.sh"]
+        type: pattern
+        location: Dockerfile:37
+        description: Delegates startup to shell script; is the right place for runtime JVM args.
+    language: Dockerfile
+    lines: 37
+
+  - file: docker-entrypoint.sh
+    path: docker-entrypoint.sh
+    purpose: Container entrypoint; runs the WAR with locale JVM flags.
+    key_elements:
+      - element: exec java -Duser.country=US -Duser.language=en -jar /app/ROOT.war
+        type: pattern
+        location: docker-entrypoint.sh:5
+        description: >
+          No -Dgrails.env flag present. Adding -Dgrails.env=staging here (or via environment
+          variable) is the runtime override mechanism.
+    language: bash
+    lines: 5
+
+  - file: grails-app/conf/application.yml
+    path: grails-app/conf/application.yml
+    purpose: Grails application configuration with environment-specific blocks.
+    key_elements:
+      - element: environments.staging
+        type: pattern
+        location: grails-app/conf/application.yml:84
+        description: >
+          A `staging` environment block exists and is fully defined (separate H2 datasource
+          URL `stagingDb`). This confirms the WAR already contains staging config; it just
+          needs to be activated at runtime.
+      - element: environments.production
+        type: pattern
+        location: grails-app/conf/application.yml:67
+        description: Production block disables Grails Console plugin, uses prodDb.
+    language: yaml
+    lines: 100
+
+  - file: .github/workflows/docker-publish.yml
+    path: .github/workflows/docker-publish.yml
+    purpose: Publishes Docker image to Docker Hub on GitHub Release publication.
+    key_elements:
+      - element: "on: release: types: [published]"
+        type: pattern
+        location: .github/workflows/docker-publish.yml:4
+        description: Only triggers on release; no staging/edge image workflow currently exists.
+      - element: type=semver,pattern={{version}}
+        type: pattern
+        location: .github/workflows/docker-publish.yml:24
+        description: Produces semver tags (e.g., 0.2.1, 0.2) but no edge/staging tag.
+    language: yaml
+    lines: 32
+
+  - file: docker-compose.yml
+    path: docker-compose.yml
+    purpose: Compose file for production deployment; references versioned Docker Hub image.
+    key_elements:
+      - element: "image: badboybry9000/sbx-grails-ci:0.2.1"
+        type: pattern
+        location: docker-compose.yml:3
+        description: Pinned to semver release tag; no GRAILS_ENV override in environment section.
+    language: yaml
+    lines: 12
+
+patterns_found:
+  - category: architecture
+    pattern: build-time-environment-bake
+    description: >
+      `grails.env=prod` is passed as a Gradle system property during `bootWar`, setting the
+      Grails environment for the build phase. However, Grails 7 (Spring Boot) resolves the
+      active environment at JVM startup via -Dgrails.env or GRAILS_ENV, reading the correct
+      `environments:` block from the already-bundled application.yml inside the WAR. The
+      build-time flag does NOT lock the runtime environment.
+    examples:
+      - file: Dockerfile
+        location: Dockerfile:13
+        snippet: "RUN ./gradlew bootWar -Dgrails.env=prod --no-daemon"
+      - file: grails-app/conf/application.yml
+        location: grails-app/conf/application.yml:82
+        snippet: |
+          staging:
+            dataSource:
+              dbCreate: create-drop
+              url: jdbc:h2:mem:stagingDb;...
+    prevalence: common
+
+  - category: structure
+    pattern: release-only-docker-publish
+    description: >
+      The current Docker publish workflow is gated on GitHub Release events only; no
+      staging/edge image is produced on every push to main. This is a gap for staging deployments.
+    examples:
+      - file: .github/workflows/docker-publish.yml
+        location: .github/workflows/docker-publish.yml:3
+        snippet: |
+          on:
+            release:
+              types: [published]
+    prevalence: common
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: GitHub Actions (docker-publish.yml)
+      responsibility: Builds and pushes Docker image to Docker Hub on release
+      location: .github/workflows/docker-publish.yml
+      relationship_to_domain: Directly controls what images are built and published, and when
+    - component: docker/metadata-action
+      responsibility: Auto-generates Docker image tags from git refs/semver
+      location: .github/workflows/docker-publish.yml:15
+      relationship_to_domain: Tag strategy is driven by this action's config
+    - component: Grails application.yml environments blocks
+      responsibility: Contains per-environment config (staging, production, development, test)
+      location: grails-app/conf/application.yml:67-90
+      relationship_to_domain: Determines what config is active at runtime based on grails.env
+
+  data_flow_involving_domain: >
+    Code push → GitHub Actions gradle.yml (test/build) → on release: docker-publish.yml builds
+    multi-stage Docker image with grails.env=prod baked → pushes to Docker Hub with semver tags →
+    docker-compose.yml on server references pinned tag → container runs entrypoint which invokes
+    java -jar ROOT.war (no runtime grails.env override currently).
+
+related_technology_stack:
+  languages_used_in_domain:
+    - Groovy
+    - Dockerfile (multi-stage)
+    - YAML (GitHub Actions, Grails config)
+    - Bash
+  frameworks_used_in_domain:
+    - name: Grails 7 (grailsVersion=7.0.7)
+      usage_in_domain: >
+        Spring Boot-based web framework; environment selection via -Dgrails.env system property
+        or GRAILS_ENV env var. All environment blocks bundled in the WAR; runtime flag activates
+        the correct block. Build-time -Dgrails.env does NOT seal the WAR to one environment.
+    - name: GitHub Actions
+      usage_in_domain: CI for tests, dependency graph, and Docker image publication
+    - name: docker/build-push-action v7
+      usage_in_domain: Builds and pushes Docker image with GHA cache
+    - name: docker/metadata-action v6
+      usage_in_domain: Generates OCI-compliant image tags from semver git refs
+  external_apis_used_in_domain:
+    - name: Docker Hub (registry-1.docker.io)
+      integration_point: Image push from docker-publish.yml using DOCKERHUB_USERNAME + DOCKERHUB_TOKEN secrets
+
+related_conventions:
+  naming_patterns_in_domain: >
+    Production images: semver tags `X.Y.Z` and `X.Y` via docker/metadata-action semver pattern.
+    No edge/staging naming convention currently exists in the codebase.
+  structure_of_domain: Single-repo, single-service; one Dockerfile for all environments.
+  error_handling_in_domain: N/A for image publishing
+  testing_in_domain: gradle.yml runs `./gradlew check` on PRs only; no image smoke test
+  documentation_in_domain: docker-compose.yml comment `# x-release-please-version` links image tag to release-please
+
+related_dependencies:
+  internal:
+    - component: release-please
+      relationship_to_domain: Bumps version in docker-compose.yml; triggers release event that fires docker-publish.yml
+      direction: outbound
+    - component: gradle.yml
+      relationship_to_domain: CI tests gate before code reaches main; indirectly gates what gets released/imaged
+      direction: inbound
+  external:
+    - name: Docker Hub (badboybry9000 namespace)
+      purpose_for_domain: Hosts production images; free Personal account (200 pulls/6h rate limit)
+    - name: eclipse-temurin:25 (Docker Hub)
+      purpose_for_domain: Base image for both build and runtime stages; subject to Docker Hub pull limits in CI
+
+domain_security_considerations:
+  sensitive_areas:
+    - area: DOCKERHUB_TOKEN secret
+      location: .github/workflows/docker-publish.yml:17
+      concern: >
+        Stored as GitHub Actions secret; follows least-privilege pattern. Consider scoping to
+        write-only access on the target repository. Token rotation policy should be defined.
+    - area: Grails environment config in WAR
+      location: grails-app/conf/application.yml
+      concern: >
+        The WAR bundles ALL environment configs (staging DB URLs, potential staging credentials).
+        Do not put real credentials in application.yml; inject them at runtime via env vars or
+        Spring Boot externalized config. Current staging config uses in-memory H2 only — no risk.
+  authentication_patterns_in_domain: >
+    Docker Hub push: DOCKERHUB_USERNAME + DOCKERHUB_TOKEN secrets via docker/login-action.
+    GHCR push (if adopted): GITHUB_TOKEN (built-in, no secret needed, zero credential management).
+  authorization_patterns_in_domain: >
+    Current: Docker Hub public repository — any authenticated user can pull.
+    GHCR alternative: public package inherits repository visibility; private inherits repo permissions.
+  data_validation_in_domain: N/A
+
+testing_patterns:
+  framework: N/A for image publishing
+  coverage_areas:
+    - No image-layer smoke tests currently exist
+    - No staging deploy test after image push
+  test_organization: N/A
+  mock_patterns:
+    - N/A
+
+# ============================================================
+# RESEARCH FINDINGS: TOP APPROACHES (factual, no implementation)
+# ============================================================
+
+approaches:
+  approach_1_ghcr_split_registry:
+    name: "Staging → ghcr.io, Production → Docker Hub"
+    description: >
+      Push staging/edge images to GitHub Container Registry (ghcr.io) on every push to main.
+      Keep Docker Hub exclusively for production semver releases.
+    trigger: push to main branch → ghcr.io edge image; GitHub Release → Docker Hub semver image
+    tags:
+      ghcr: "ghcr.io/<owner>/sbx-grails-ci:edge, ghcr.io/<owner>/sbx-grails-ci:sha-<sha7>"
+      dockerhub: "badboybry9000/sbx-grails-ci:1.2.3, badboybry9000/sbx-grails-ci:1.2"
+    pros:
+      - GHCR uses GITHUB_TOKEN — zero secret management for staging builds
+      - GHCR public images have no pull rate limits (confirmed current policy; 1-month notice required before change)
+      - Staging churn does not pollute Docker Hub repository or consume Docker Hub pull quota
+      - GHA build cache (type=gha) works identically for both registries
+      - Image is automatically linked to the GitHub repository (visibility, access control inherit from repo)
+      - Separates concerns: staging = experimental (ghcr.io), production = stable (Docker Hub)
+    cons:
+      - Two registries to maintain; operators must know which to pull from
+      - GHCR container storage is currently free but not guaranteed (docs state 1-month notice policy)
+      - Public GHCR images require a GitHub account-scoped namespace; image visibility defaults to private until changed
+    verdict_for_small_team: RECOMMENDED for small teams already on GitHub
+
+  approach_2_dockerhub_dual_tag:
+    name: "Single registry (Docker Hub), dual-tag strategy"
+    description: >
+      Push both staging and production images to Docker Hub. Use `edge` or `main` tag for
+      staging and semver for production. Both workflows share the same registry.
+    trigger: push to main → :edge tag; GitHub Release → semver tags
+    tags:
+      staging: "badboybry9000/sbx-grails-ci:edge, badboybry9000/sbx-grails-ci:sha-<sha7>"
+      production: "badboybry9000/sbx-grails-ci:1.2.3, badboybry9000/sbx-grails-ci:1.2"
+    pros:
+      - Single registry; operators only need to know one domain
+      - Simpler mental model; all images in one place
+      - Consistent docker-compose.yml structure regardless of environment
+    cons:
+      - Docker Hub Personal account: 200 pulls/6h rate limit; staging CI loops and restarts eat into this
+      - Requires DOCKERHUB_TOKEN secret for every staging push (runs on every main commit)
+      - Free Personal account allows only 1 private repository; staging image in same public repo exposes it
+      - No logical separation between "ready to release" (production) and "latest CI commit" (staging)
+    verdict_for_small_team: Workable but friction-heavy on Docker Hub free tier
+
+  approach_3_ghcr_only:
+    name: "Migrate fully to ghcr.io (drop Docker Hub)"
+    description: >
+      Publish all images (staging and production) exclusively to ghcr.io.
+    trigger: push to main → :edge + sha; GitHub Release → semver tags on ghcr.io
+    tags:
+      all: "ghcr.io/<owner>/sbx-grails-ci:edge, ghcr.io/<owner>/sbx-grails-ci:1.2.3"
+    pros:
+      - Zero Docker Hub dependency; no pull rate limits for public images
+      - Single registry, single credential model (GITHUB_TOKEN everywhere)
+      - Native GitHub integration (package page linked to repo, CI/CD uses GITHUB_TOKEN)
+      - Currently free for container storage and bandwidth
+    cons:
+      - Docker Hub is more universally recognized by ops/infra teams; ghcr.io requires GitHub account for private pulls
+      - Public images on ghcr.io must explicitly be made public (default is private when first pushed)
+      - Existing docker-compose.yml and server configuration must be updated
+    verdict_for_small_team: Best long-term option; migration cost is low
+
+grails_environment_resolution:
+  finding: >
+    Grails 7 (Spring Boot) resolves the active environment at JVM startup, not exclusively at build
+    time. The `environments:` blocks in application.yml are all bundled into the WAR during `bootWar`.
+    The `-Dgrails.env=prod` flag passed to Gradle during build sets the Grails environment for
+    any build-phase logic (e.g., BuildConfig, code generation) but does NOT seal the WAR to `prod`
+    at runtime. At container startup, passing `-Dgrails.env=staging` as a JVM arg (or setting the
+    `GRAILS_ENV` environment variable) activates the staging block from application.yml.
+  current_state: >
+    docker-entrypoint.sh runs: exec java -Duser.country=US -Duser.language=en -jar /app/ROOT.war
+    No -Dgrails.env flag is passed → defaults to production config (since the WAR was built with
+    grails.env=prod and no override is present at runtime).
+  recommendation: >
+    Build ONE image. Override the Grails environment at runtime via the container's environment
+    section in docker-compose.yml using JAVA_OPTS or an explicit entrypoint arg. This avoids
+    maintaining a separate staging Dockerfile or build pipeline.
+  runtime_override_mechanism:
+    via_jvm_arg: "exec java -Dgrails.env=staging -jar /app/ROOT.war"
+    via_env_var: "GRAILS_ENV=staging  (Grails checks this at startup)"
+    via_compose_env: |
+      environment:
+        JAVA_TOOL_OPTIONS: "-Dgrails.env=staging"
+  separate_staging_image_justified_when:
+    - Staging has different compiled dependencies or plugins not present in prod
+    - Staging requires debug agents (e.g., JVM remote debug port, profiling agents)
+    - Team wants to guarantee staging image is byte-for-byte separate from prod for audit/compliance
+
+tag_naming_conventions:
+  recommended_set:
+    - tag: "edge"
+      meaning: Latest commit on main; always moving pointer; analogous to Docker's `latest` for dev
+      trigger: push to main
+    - tag: "sha-<7char>"
+      meaning: Immutable; tied to exact git SHA; enables rollback to any prior staging build
+      trigger: push to main (alongside `edge`)
+    - tag: "X.Y.Z"
+      meaning: Exact semver release; immutable production image
+      trigger: GitHub Release published
+    - tag: "X.Y"
+      meaning: Floating minor semver; points to latest patch of a minor version
+      trigger: GitHub Release published
+  avoid:
+    - tag: "latest"
+      reason: >
+        Ambiguous — could mean staging or production depending on when it was pushed. Existing
+        docker/metadata-action config does not produce `latest`; keep it that way.
+    - tag: "staging"
+      reason: >
+        Semantically tied to an environment rather than a branch state; `edge` better conveys
+        "tip of main." `staging` as a tag name can be confused with `staging` as a deployment target.
+
+github_actions_trigger_strategy:
+  staging_build:
+    trigger: "on: push: branches: [main]"
+    rationale: >
+      Produces a new edge image on every merge to main. This means the staging environment can
+      always be updated to the latest code without waiting for a formal release. SHA tag provides
+      traceability. Works well with the existing release-please flow (release-please PR merges to
+      main, then edge is built, then release is cut).
+    alternative: >
+      on: workflow_run (after gradle.yml passes) — ensures staging image is only built when tests
+      pass. Adds a small delay but prevents broken images from being pushed.
+  production_build:
+    trigger: "on: release: types: [published]"
+    rationale: Already matches current docker-publish.yml; no change needed.
+
+open_questions:
+  - question: >
+      Is the production docker-compose.yml pulling the image from Docker Hub directly on the server,
+      or via some pull-through cache / Watchtower / Portainer?
+    context: >
+      If the server uses Watchtower or a similar auto-updater pointed at Docker Hub, the 200-pull
+      limit is relevant for the server's pull frequency, not just CI.
+    type: nice_to_know
+    affects: []
+  - question: >
+      Does the staging deployment share the same server as production (same docker-compose.yml),
+      or will there be a separate staging compose file / host?
+    context: >
+      If staging runs alongside production on the same host, JAVA_TOOL_OPTIONS or separate
+      compose service override is the implementation path. If separate host, the image name/tag
+      difference between registries is the key decision.
+    type: decision_blocker
+    affects: []
+  - question: >
+      Are there any Grails plugins (e.g., Grails Console, security plugins) that behave differently
+      at build time vs runtime based on grails.env?
+    context: >
+      The application.yml shows `grails.plugin.console.enabled: false` in the production block,
+      which is a runtime setting. Build-time-only differences would be the only reason to build
+      a separate staging image.
+    type: nice_to_know
+    affects: []
+
+gaps:
+  - area: Staging docker-compose.yml
+    description: >
+      No staging-specific compose file or service override exists in the repo. Research could
+      not determine the intended staging deployment target (separate host, same host, Kubernetes, etc.).
+    impact: nice_to_know
+    affects: []
+  - area: Docker Hub pull limits in production context
+    description: >
+      Docker Hub usage page confirms Personal (free) accounts have 200 pulls/6h and only 1 private
+      repository. If CI pulls eclipse-temurin:25 for the build stage frequently, shared runner
+      IP limits may be hit even with authentication. This was not measured empirically.
+    impact: research_blocker
+    affects: []
+  - area: GHCR container registry billing future
+    description: >
+      GitHub docs explicitly state container image storage is "currently free" with 1-month
+      advance notice of policy changes. This introduces minor long-term uncertainty for Approach 1/3.
+    impact: nice_to_know
+    affects: []

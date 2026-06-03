@@ -1,0 +1,65 @@
+{
+	"name": "Grails 7 Dev Container",
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
+	"features": {
+		"ghcr.io/devcontainers/features/java:1": {
+			"version": "none",
+			"installMaven": "false",
+			"installGradle": "false"
+		},
+		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+	},
+	"forwardPorts": [
+		8080,
+		5005
+	],
+	"portsAttributes": {
+		"8080": {
+			"label": "Grails App",
+			"onAutoForward": "notify"
+		},
+		"5005": {
+			"label": "JVM Debug",
+			"onAutoForward": "silent"
+		}
+	},
+	"remoteEnv": {
+		"GRADLE_OPTS": "-Dfile.encoding=UTF-8 -Xmx1024M",
+		"TESTCONTAINERS_HOST_OVERRIDE": "host.docker.internal",
+		"TESTCONTAINERS_RYUK_DISABLED": "true"
+	},
+	"runArgs": [
+		"--env-file",
+		".devcontainer/devcontainer.env"
+	],
+	"mounts": [
+		"source=gradle-cache,target=/home/vscode/.gradle,type=volume",
+		"source=intellij-cache,target=/home/vscode/.cache/JetBrains,type=volume"
+	],
+	"postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.gradle /home/vscode/.cache",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"vscjava.vscode-java-pack",
+				"marlon407.code-groovy",
+				"vscjava.vscode-gradle",
+				"vmware.vscode-spring-boot",
+				"redhat.vscode-xml"
+			],
+			"settings": {
+				"java.import.gradle.java.home": "/usr/lib/jvm/msopenjdk-current"
+			}
+		},
+		"jetbrains": {
+			"backend": "IntelliJ",
+			"plugins": [
+				"org.intellij.groovy",
+				"com.jetbrains.plugins.grails",
+				"com.intellij.gradle"
+			]
+		}
+	},
+	"remoteUser": "vscode"
+}

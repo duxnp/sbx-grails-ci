@@ -43,3 +43,4 @@ out/
 Thumbs.db
 .DS_Store
 target/
+**.env
