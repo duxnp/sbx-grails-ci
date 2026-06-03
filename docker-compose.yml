@@ -1,6 +1,6 @@
 services:
   web:
-    image: badboybry9000/sbx-grails-ci:0.2.1 # x-release-please-version
+    image: badboybry9000/sbx-grails-ci:0.3.0 # x-release-please-version
     container_name: ciexperiments
     ports:
       - 27200:8080
